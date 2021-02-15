@@ -1,0 +1,458 @@
+---
+title: "Chapter 7 Lecture and Lab Explanations"
+author: "Jacob Clayton, Noah Giles, Alexander King, Jacob Skipper"
+date: "2/12/2021"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+```{r setup, include= FALSE, warning=FALSE}
+rm(list = ls())
+options(scipen=999)
+options(max.print = 99999)
+```
+
+# Table of Contents
+
+1. [Introduction to Lab 7.8 - Nonlinear Modeling](# Introduction to Lab 7.8 - Nonlinear Modeling)
+
+2. [7.8.1- Polynomial Regression and Step Functions](# 7.8.1- Polynomial Regression and Step Functions)
+
+3. [7.8.2- Splines](# 7.8.2- Splines)
+
+4. [7.8.3- General Additive Models "GAM's"](# 7.8.3- General Additive Models "GAM's") 
+
+5. [Applied Exercise 10](# Applied Exercise 10)
+
+6. [Conclusions](# Conclusions)
+
+
+# Introduction to Lab 7.8 - Nonlinear Modeling
+
+|   During this Presentation you will have the chance to learn all that you want to and more on Polynomial Regresssion, Step Functions, Splines, and General Additive Models known as GAM's. The following concepts have been split into three separate guided labs, 7.8.1-7.8.3, following these guided labs is a Applied Exercise highlighting a GAM model. 
+
+Load the $ISLR$ library and attach the Wage dataset- we will be using this data set for all three of the guided labs. 
+
+```{r}
+library(ISLR)
+attach(Wage)
+```
+
+|   The over-arching goal for the three guided labs that will be presented today is to provide the code and further explanation to the analysis that occurred with the Wage data during chapter seven. More importantly, we here at team 3 aim to provide our fellow students an easily understood walk-through of complex non-linear fitting procedures. 
+
+# 7.8.1- Polynomial Regression and Step Functions
+
+|   This first lab is all about recreating Figure 7.1 [the leftmost figure] found on page 267 in "An Introduction to Statistical Learning". Additionally, our classmates will remember that Team2 (and Team 12 in the afternoon) covered this extremely well last week.  We include it here as a quick reminder, and because there are elements that later portions of 7.8.2 and 7.8.3 will rely upon. First we fit the model with the following command:
+
+```{r}
+fit=lm(wage~poly(age,4),data=Wage)
+coef(summary(fit))
+```
+
+|   The reader should quickly note that this model is not that complicated; in fact, it is a normal lm() function just using an additional command: poly(). The code above simply is predicting wage while using a fourth-degree polynomial in the age variable - (age,4). The poly function returns a matrix whose columns are a basis of orthogonal polynomials. This just means that each column is a linear combination of the variables $age, age^2, age^3,and$ $age^4$. However, the power of the poly() function does not stop there we can use it to obtain $age, age^2, age^3, and age^4$ directly by using raw = True within the poly function (this will be shown in the following code chunk). This does not change the model in any meaningful way.
+
+```{r}
+fit2=lm(wage~poly(age,4,raw=T),data=Wage)
+coef(summary(fit2))
+```
+|   Here we see the poly() function ability to directly pull out polynomial degrees with the raw = T added into the function.
+
+|   Interestingly, there are multiple ways and equivalent ways of fitting the polynomial model. For example: 
+```{r}
+fit2a=lm(wage~age+I(age^2)+I(age^3)+I(age^4),data=Wage)
+coef(fit2a)
+```
+
+This code chunk accomplishes the same results as the poly function by simply creating the polynomial basis functions with the wrapper function I() and the ^ symbol.  
+
+```{r}
+fit2b=lm(wage~cbind(age,age^2,age^3,age^4),data=Wage)
+summary(fit2b)
+```
+
+|   This does the same as the wrapper function but more compactly by using the cbind() function. The cbind function in this code simultaneously builds a matrix from the collection of listed vectors and also serves as a wrapper. 
+
+```{r}
+agelims=range(age)
+age.grid=seq(from=agelims[1],to=agelims[2])
+```
+
+|   We now set abut creating a grid of values for age for which we want predictions. To get these predictions we call the generic predict() function and specify "se=TRUE" in order to get the standard errors of our predictions. Finally we set about plotting the data and the 4th degree polynomial.
+
+```{r}
+preds=predict(fit,newdata=list(age=age.grid),se=TRUE)
+se.bands=cbind(preds$fit+2*preds$se.fit,preds$fit-2*preds$se.fit)
+par(mfrow=c(1,1),mar=c(4.5, 4.5, 1, 1),oma=c(2,2,2,2))
+plot(age,wage,xlim=agelims,cex=.5, col="darkgrey")
+title ("Degree-4 Polynomial",outer=T)
+lines(age.grid,preds$fit,lwd=2,col="blue")
+matlines(age.grid,se.bands,lwd=1,col="blue",lty=3)
+```
+
+|   The code above creates the plot of our data point along with a solid blue curve which is representative of 4 degree polynomial of wage as a function of Age. The dotted blue curves around the solid blue cure indicate the estimated 95% confidence interval. 
+
+|   We use the 'mar' and 'oma' arguments within the par() function to control the margins of the plot. Title() creates a figure title. 
+
+```{r}
+
+preds2=predict(fit2,newdata=list(age=age.grid),se=TRUE)
+
+max(abs(preds$fit-preds2$fit))
+```
+|   The code above simply demonstrates that the fitted values are the same whether or not the orthogonal set of basis functions is produced using the poly function.
+
+|   One of the most important things to consider while running a polynomial regression is what degree of polynomial to use. One of the most straight forward ways to accomplish this is by the use of hypothesis tests. We now will fit and test multiple models ranging from linear to a fifth degree polynomial. We are doing this hypothesis testing in order to find the simplest model which is still sufficient to explain the relationship between age and wage. 
+
+| To compare the models to one another we use the anova() function, which performs an analysis of variance to test the null hypothesis that a model (say M1) is sufficient in explaining the data against the alternative hypothesis that a more complex model (say M2) is required to better explain the relationship and variance found within the data. In order, to accurately use the anova() function the models must be nested. For example, below we fit five different models and then compare them sequentially from the simpler model to the most complex model. 
+```{r}
+fit.1= lm(wage~age,data=Wage)
+fit.2= lm(wage~poly(age,2),data=Wage)
+fit.3= lm(wage~poly(age,3),data=Wage)
+fit.4= lm(wage~poly(age,4),data=Wage)
+fit.5= lm(wage~poly(age,5),data=Wage)
+anova(fit.1,fit.2,fit.3,fit.4,fit.5)
+```
+
+|   The anova() test results leads us at team 3 to conclude that either a cubic or a quartic polynomial provide a reasonable fit to the data. In brief, we arrived at this conclusion by way of the p-values presented in the anova() test. The p-value comparing model 1 and 2 is essentially zero ($<2e-16$) indicating that a linear fit is not sufficient. Furthermore, the p-value comparing model 2 to 3 is low .0017, thus the quadratic fit is also insufficient. The p-value comparing models 3 and 4 is around .05, while the fifth degree polynomial p-value is at .37. The large p-value on the fifth degree polynomial suggest that a fifth degree polynomial is unneeded. Therefore, either a cubic or a quartic polynomial appears to provide the most reasonable fit for our data. 
+
+| Interestingly enough we could have obtained these polynomials, at least in this example, in a more succinct way by exploiting the fact that the poly() function creates orthogonal polynomials. 
+
+```{r}
+coef(summary(fit.5))
+
+# squaring T-statistics 
+print("model 2 F-stat:"); (-11.983)^2
+print("model 3 F-stat:"); (3.144)^2
+print("model 4 F-stat:"); (-1.951)^2
+print("model 5 F-stat:"); (-0.897)^2
+```
+
+|   Notice how the p-values are identical; in fact, the t-statistics when squared are equal to the f-statistics created by the anova() function. A quick thing to note about the anova() method is that it will work whether or not orthogonal polynomials are used. 
+
+```{r}
+fit.1=lm(wage~education+age,data=Wage)
+fit.2=lm(wage~education+poly(age,2),data=Wage)
+fit.3=lm(wage~education+poly(age,3),data=Wage)
+fit.4=lm(wage~education+poly(age,4),data=Wage)
+fit.5=lm(wage~education+poly(age,5),data=Wage)
+anova(fit.1,fit.2,fit.3, fit.4, fit.5)
+```
+
+|   We can see that with this additional education term the most appropriate polynomial regression is a cubic polynomial. However, like all things in R there is yet another way to choose polynomial degree via cross validation this is explained in detail in chapter 5. 
+
+
+
+```{r}
+fit=glm(I(wage>250)~poly(age,4),data=Wage,family=binomial)
+#
+preds=predict(fit,newdata=list(age=age.grid),se=T)
+```
+
+|   Next we consider the task of predicting  whether an individual earns more than 250K a year. As can been seen from the above code chunk we proceed much in the same way as before, except that we first create an appropriate response vector and then apply the glm() function using 'family=binomial' in order to fit a polynomial logistic regression.
+
+|   Consider the fact that we use the I() to create this binary response variable. The expression wage>250 is evaluated as a logical variable containing T's and F's, which glm() then coerces to binary by turning T's to 1 and F's to 0. Once again, we make predictions for this model by using the predict() function. 
+
+|   The calculation of confidence intervals with a glm() function, however, is a more involved process than its lm() counterpart. This is due to the default prediction type for an glm() model being 'type="link"'; therefore, we get predictions for the logit or $log((Pr(Y=1|X)/(1-Pr(Y=1|X)))=XB)$. In order to obtain the confidence intervals that we need ($Pr(Y=1|X)$) we must use the transformation $Pr(Y=1|X) = ((exp(XB))/(1+exp(XB)))$
+
+```{r}
+pfit=exp(preds$fit)/(1+exp(preds$fit))
+se.bands.logit=cbind(preds$fit+2*preds$se.fit,preds$fit-2*preds$se.fit)
+se.bands=exp(se.bands.logit)/(1+exp(se.bands.logit))
+
+# ^ Transformation in order to get confidence intervals for the glm()
+
+preds=predict(fit,newdata=list(age=age.grid),type="response",se=T)
+
+# ^ directly computes the probabilities. Unfortunately, the corresponding confidence intervals would have not been sensible as they would have resulted in negative probabilities!
+```
+
+| The next section of data recreates the right hand plot from figure 7.1.
+
+```{r}
+plot(age,I(wage>250),xlim=agelims,type="n",ylim=c(0,.2))
+points(jitter(age),I((wage>250)/5),cex =.5,pch="|",col="darkgrey")
+lines(age.grid,pfit,lwd=2,col="blue")
+matlines(age.grid,se.bands,lwd=1,col="blue",lty=3)
+```
+We have drawn the age values corresponding to the observations with wage values above 250k as gray marks at the top of the plot, while at the same time those with wage values below 250 are shown as gray marks at the bottom of the plot. The jitter() function was used to jitter the age values so that observations with the same age would not cover each other up. 
+
+## Step Functions
+
+```{r}
+table(cut(age,4))
+fit=lm(wage~cut(age,4),data=Wage)
+coef(summary(fit))
+```
+
+|   In order to fit a step function we simply use the cut() function. Here the cut() automatically picked cutpoints at 33.5, 49, 64.5; however, it is important to note here that we directly specify our own cutpoints via the 'breaks' option. 
+
+|   The cut() function returns a ordered categorical variable then the lm() function creates a set of dummy variables to use in the regression. For instance, in the former example the age<33.5 category is left out and so the intercept coefficient should be interpreted as the average salary for those under 33.5 years of age. The other coefficient should be interpreted as the average salary for those age groups.
+
+# 7.8.2- Splines
+
+| First, in order to fit regression splines in R, install the splines library. In section 7.4 it was demonstrated that regression splines can be fit by constructing an appropriate matrix of the basis functions. This can be accomplished through the use of the bs() function. The bs() function generates the entire matrix of basis functions for splines with a specified set of knots. The following code outlines fitting wage to age using a regression spline. 
+
+ *Important: default is a cubic spline*
+ 
+```{r}
+# 1st section
+library(splines)
+fit=lm(wage~bs(age,knots=c(25,40,60)),data=Wage)
+pred=predict(fit,newdata=list(age=age.grid),se=T)
+plot(age,wage,col="gray")
+lines(age.grid,pred$fit,lwd=2)
+lines(age.grid,pred$fit+2*pred$se,lty="dashed")
+lines(age.grid,pred$fit-2*pred$se,lty="dashed")
+# 2nd section
+dim(bs(age,knots=c(25,40,60)))
+dim(bs(age,df=6))
+attr(bs(age,df=6),"knots")
+# 3rd section
+fit2=lm(wage~ns(age,df=4),data=Wage)
+pred2=predict(fit2,newdata=list(age=age.grid),se=T)
+lines(age.grid,pred2$fit,col="red",lwd=2)
+```
+
+|   The first section of code creates knots at the specified ages of 25, 40, and 60. This produces a spline with six basis functions. 
+
+*Recall: that a cubic spline with 3 knots has 7 degrees of freedom; these degrees of freedom are made up of the intercept plus six basis functions.*
+
+|   The Second section of code uses the df() option to produce splines with knots at uniform quantiles of the data. In using the df() option, R has chosen knots at 33.8, 42.0, and 51.0 which corresponds directly to the 25th, 50th, and 75th percentiles of the age variable.
+
+*Additional info: the bs() function has a degree argument which allows one to fit splines of any degree not just the default degree of 3*
+
+|   The third and final section of code within this code chunk fits a natural spline by use of the ns() function. We, at the books suggestion, fit a natural spline with four degrees of freedom. 
+
+*As with the bs() function we could instead specify the knots directly using the knots option* 
+
+|   In order to fit a smoothing spline, we use the smooth.spline() function. The following code aims to reproduce Figure 7.8 on page 280. 
+
+```{r}
+plot(age,wage,xlim=agelims,cex=.5,col="darkgrey")
+title("Smoothing Spline")
+fit=smooth.spline(age,wage,df=16)
+fit2=smooth.spline(age,wage,cv=TRUE)
+fit2$df
+lines(fit,col="red",lwd=2)
+lines(fit2,col="blue",lwd=2)
+legend("topright",legend=c("16 DF","6.8 DF"),col=c("red","blue"),lty=1,lwd=2,cex=.8)
+```
+
+|   Notice that in our first call to smooth.spline() we specified that df=16. The function then determines which lambda leads to 16 degrees of freedom. However, in the second call to smooth.spline() we have selected smoothness level via cross validation (*cv=TRUE*). As you can see there is little difference between the two fits, beyond the fact that the red line ( the one with 16 df) is less smooth. Since there is little difference in the fit, we would chose the smoothing spline fit with 6.8 degrees of freedom as the preferable model due to Occam's Razor (always choose the simpler model). 
+
+## Local Regressions:
+
+|   In order to perform a local linear regression we use the loess() function in R. Below we have performed local linear regressions using spans of 0.2 & 0.5 - that is, each neighborhood consists of 20% or 50% of the observations. Usually the larger the span, the smoother the fit.  
+
+```{r}
+plot(age,wage,xlim=agelims,cex=.5,col="darkgrey")
+title("Local Regression")
+fit=loess(wage~age,span=.2,data=Wage)
+fit2=loess(wage~age,span =.5,data=Wage)
+lines(age.grid,predict(fit,data.frame(age=age.grid)),col="red",lwd=2)
+lines(age.grid,predict(fit2,data.frame(age=age.grid)),col="blue",lwd=2)
+legend ("topright",legend=c("Span=0.2","Span=0.5"),col=c("red","blue"),lty=1,lwd=2,cex=.8)
+```
+
+# 7.8.3- General Additive Models "GAM's"
+
+|   In this section we fit a GAM to predict wage using natural spline functions of year and age, while treating education as a qualitative predictor. 
+
+```{r}
+gam1=lm(wage~ns(year,4)+ns(age,5)+education,data=Wage)
+```
+
+*Since this is just a large linear regression model using the appropriate choice of basis functions we can use an lm() function.*  
+
+```{r}
+library(gam)
+gam.m3=gam(wage~s(year,4)+s(age,5)+education,data=Wage)
+```
+
+|   We now fit the model using smoothing splines rather than natural splines. In order to accomplish this we have to use the gam() function located in the gam library. The s() function which is part of the gam library is used to indicate that we want a smoothing spline used. Following the book we specify that year should have 4 degrees of freedom while age will have 5 degrees of freedom. Since age is a qualitative variable we leave it as-is, and it will be converted into four dummy variables. This is all combined within the gam() function to create our model. Plotting gam.m3 gives us a reproduction of figure 7.12 on page 285. 
+
+```{r}
+par(mfrow=c(1,3))
+plot(gam.m3,se=TRUE,col="blue")
+```
+
+```{r}
+plot.Gam(gam1,se=TRUE,col="red") # VERY Important - plot.Gam, not plot.gam
+```
+
+The plotting of gam1 gives us a reproduction of figure 7.11 on page 284.  Note that depending on your text version, the given code may read "plot.gam", with a lower-case G.  Whether an innocent typo or an update to the package since the text was published, the proper working function now has an upper-case G.  If you defined the GAM using the gam() function, you can just call plot() and it works perfectly fine (the se=TRUE component says to give us the confidence interval bands where appropriate).  If you define the GAM as a regular lm(), you can still plot it as a GAM, you just have to use that plot.Gam() construction.  50 of one, half-a-dozen of the other.
+
+|   In these plots "year" looks rather linear. Therefore, we set out to perform a series of anova() tests in order to determine which model is best:
+
+1. A GAM that excludes year.
+2. A GAM that uses a linear function of year.
+3. A GAM that uses a spline function of year. 
+
+```{r}
+gam.m1=gam(wage~s(age,5)+education,data=Wage)
+gam.m2=gam(wage~year+s(age,5)+education,data=Wage)
+anova(gam.m1,gam.m2,gam.m3,test="F")
+```
+
+| Upon viewing the results fo the anova() test we find that there is compelling evidence that a GAM model with a linear function of year is better than a GAM model that does not include the year variable at all with a significant p-value of .00014. We also find that there is no evidence that a non-linear function of year is needed with a p-value of .349 (non-significant). In other words, based on the results of the anova() we at team 3 find that model (2) is preferable. 
+
+```{r}
+summary(gam.m3)
+```
+
+| The p-values for year and age correspond directly to the null hypothesis of a linear relationship vs the alternative of a non-linear relationship. The large p-value for year (non-significant when viewed through the lens of wanting non-linear relationships) reinforces our conclusion from the anova() test that a linear function is right for year.  Similarly, because of the significant p-value for age, we definitely need a non-linear term for that parameter. *Remember this is the summary for the third model and not the best model*
+
+```{r}
+preds=predict(gam.m2,newdata=Wage)
+```
+
+ Here we are making predictions with our preferred model which uses year with a linear function.  There is no use of this function in a portion of the model, just an illustration that a GAM model could be used to predict values. 
+
+```{r}
+gam.lo=gam(wage~s(year,df=4)+lo(age,span=0.7)+education,data=Wage)
+plot.Gam(gam.lo,se=TRUE,col="green")
+gam.lo.i=gam(wage~lo(year,age,span=0.5)+education,data=Wage)  
+```
+
+|   We can also use local regression fits as building blocks for GAM by using the lo() function.  As you can see, the lo() function returns a series of warnings.  Other than being funky output, this does not seem to have an effect on the proper functioning of the lab.  
+
+```{r}
+library(akima)
+plot(gam.lo.i)
+```
+
+|   The local regression model (gam.lo.i) generates a two-dimensional surface, which we plot here with the akima library. As a qualitative predictor, education is held apart.    
+
+```{r}
+gam.lr=gam(I(wage>250)~year+s(age,df=5)+education,family=binomial,data=Wage)
+par(mfrow=c(1,3))
+plot(gam.lr,se=T,col="green")
+```
+
+|   The next step is to build the GAM model using logistic regression.  As is customary, we use the I() builder to construct the binary response variables, and call family=binomial.  Viewing the education graph, the range for individuals in the <HS category is way out of scale compared to the other education categories.  To investigate further, we call up the education table.  
+
+```{r}
+table(education,I(wage>250))
+```
+
+|   There were no people in that category who fit the high earner label, and so we re-run the model, leaving that category out.  To do this, we run the model as before, but include the subset clause, where we want to include every entry where the education was not "1. < HS Grad".  
+
+```{r}
+gam.lr.s=gam(I(wage>250)~year+s(age,df=5)+education,family=binomial,data=Wage,subset=(education!="1. < HS Grad"))
+plot(gam.lr.s,se=T,col="green")
+```
+
+|   Upon re-running, we can now see everything fits to the same general scale, and as noted in the text, see also that year does not seem to have a significant predictive power as opposed to age or education when the other factors are held constant.  
+
+# Applied Exercise 10
+
+```{r}
+rm(list=ls())
+library(ISLR)
+attach(College)
+library(caret)
+library(leaps)
+```
+
+## Partition DATA
+
+```{r}
+set.seed(5082)
+Part_data <- createDataPartition(Outstate , p=.8, list = FALSE)  
+College.train <- College[Part_data,]
+College.test <- College[-Part_data, ]
+```
+
+## Find the best subset of data
+
+```{r}
+varfit<-regsubsets(Outstate~.,data=College.train ,method ="forward", nvmax=17)
+var.summary<-summary(varfit)
+names(var.summary)
+```
+
+|   We want to maximize Adjusted R2, minimize CP and BIC (which are error terms)
+
+```{r}
+which.max(var.summary$adjr2) #15
+which.min(var.summary$cp) #13
+which.min(var.summary$bic) #12
+```
+
+|   These are giving us large subsets, and all are different!  Let's plot and see what happens
+
+
+```{r}
+par(mfrow=c(1,3))
+plot(var.summary$cp, xlab="Variable Count", ylab = "Cp", type= "l")
+plot(var.summary$bic, xlab="Variable Count", ylab = "BIC", type= "l")
+plot(var.summary$adjr2, xlab="Variable Count", ylab = "Adj. R2", type= "l")
+var.summary$cp
+```
+
+|   Just after five is when the curve shifts, so we'll pick six as the number of variables.  This is where any increase in the number of variables is going to yield a decreasing incremental improvement to the model. This is backed up by viewing the numerical CP - between 5 and 6, it drops almost 30. From 6 to 17, there is no drop greater than 10.
+
+```{r}
+coefident<-coef(varfit, id=6)
+names(coefident)
+```
+
+|   Private, Room.Board, PhD, perc.alumni, Expend, Grad.Rate are identified as the six best variables to use.
+
+
+## Plot GAM
+
+```{r}
+r2_all=c()
+for (i in 1:20) {
+  gm.1<-gam(Outstate~Private+s(Room.Board, df=i)+s(PhD, df=i)+s(perc.alumni, df=i)+s(Expend,df=i)+s(Grad.Rate, df=i),data=College.train)
+  preds<-predict(gm.1,newdata=College.test)
+  gamMSE<-mean((College.test$Outstate-preds)^2)
+  gamTSS<-mean((College.test$Outstate-mean(College.test$Outstate))^2)
+  testR2<-1-gamMSE/gamTSS
+  r2_all<-append(r2_all, testR2)
+}
+which.max(r2_all) #7
+
+```
+
+|   To pick degrees of freedom, we ran a for-loop testing several different values, calculated the R-squared of each, and then chose which had the greatest R-squared, which was DF=7.
+
+```{r}
+gm.1<-gam(Outstate~Private+s(Room.Board, df=7)+s(PhD, df=7)+s(perc.alumni, df=7)+s(Expend,df=7)+s(Grad.Rate, df=7),data=College.train)
+
+par(mfrow=c(2,3))
+plot(gm.1, se=TRUE, col='blue')
+```
+
+|   All of this shows intuitive responses to the question of what can predict an increase in Out of State tuition. If a college is private, tuition (for all students, include OOS) is higher.  As Room and Board goes up, tuition goes up. As the percentage of faculty with a Ph.D. increases, tuition goes up, but less drastically (you experience a leveling off). Similarly with the percentage of alumni who donate - greater percentage, higher tuition (funny how that never goes the other way). As expenditures per student goes up, the cost of OOS follows an almost logarithmic curve. As the graduation rate goes up (i.e., more prestigious and selective schools in general), so does tuition, but it does begin to drop over 90%.
+
+## Evaluation of test set
+
+```{r}
+preds<-predict(gm.1,newdata=College.test)
+gamMSE <- mean((College.test$Outstate-preds)^2)
+gamMSE #3,861,987
+
+gamTSS<-mean((College.test$Outstate-mean(College.test$Outstate))^2)
+testR2 <- 1-gamMSE/gamTSS
+testR2 #0.7963418
+
+totalLM<-lm(Outstate~.,data=College.train)
+summary(totalLM)$r.squared #Multiple R2 is 0.7675387
+summary(totalLM)$adj.r.squared #Adjusted R2 is 0.7610067
+```
+
+|   Comparing R2 values, we see that the GAM model with six variables explains 79% of the variance in Out of State tuition, while an ordinary linear regression only explains around 76% of the variance.
+
+## ANOVA
+
+```{r}
+summary(gm.1)
+```
+
+|   From viewing the final set of statistics, Anova for non-parametric, we see that Expend has a strong non-linear relationship, while Grad.Rate has a moderate non-linear relationship and Room.Board is weakly non-linear.
+
+
